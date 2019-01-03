@@ -283,4 +283,70 @@ window.onload = function () {
 </script>
 
 <style scoped>
+@viewport {
+  width: device-width ;
+  zoom: 1.0 ;
+}
+
+@-ms-viewport {
+  width: device-width ;
+}
+
+@media screen and (max-width:500px) {
+  .container{
+    display: block;
+  }
+
+  .gm-pannel{
+    display:block;
+  }
+
+  .byu-pannel{
+    display: block;
+  }
+
+  .byu-skills{
+    display: block;
+  }
+
+  .prof img{
+    width: 200px;
+  }
+
+  .me{
+    display: block;
+  }
+
+  .title{
+    font-size: 1.4em;
+  }
+
+  .row1{
+  background-size: 200px;
+  background-position: center;
+  background-color: black;
+  }
+
+  .row2{
+  background-size: 200px;
+  background-position: center;
+  background-color: black;
+  }
+
+  .row3{
+  background-size: 200px;
+  background-position: center;
+  background-color: black;
+  }
+
+  .row4{
+  background-size: 200px;
+  background-position: center;
+  background-color: black;
+  }
+
+  .panel{
+    background-color: rgba(0,0,0, .8)
+  }
+}
 </style>
