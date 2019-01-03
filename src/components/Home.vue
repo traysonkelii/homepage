@@ -341,5 +341,14 @@ window.onload = function () {
     display: none;
   }
 
+  #my-resume{
+    width: 100%;
+    top:380px;
+    overflow: scroll;
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center center;
+  }
+
 }
 </style>
