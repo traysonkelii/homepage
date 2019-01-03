@@ -135,7 +135,7 @@
             <h3>Technologies used</h3>
             <div class="byu-skills">
               <img src="../assets/node.png" alt="">
-              <img src="../assets/markl.png" alt="">
+              <img src="../assets/markl.png" alt="" id="ihsmarkit">
               <img src="../assets/es6.png" alt="">
               <img src="../assets/xquery.png" alt="">
               <img src="../assets/css.png" alt="">
@@ -322,31 +322,24 @@ window.onload = function () {
   }
 
   .row1{
-  background-size: 200px;
-  background-position: center;
-  background-color: black;
+  background-image: none;
   }
 
   .row2{
-  background-size: 200px;
-  background-position: center;
-  background-color: black;
+  background-image: none;
   }
 
   .row3{
-  background-size: 200px;
-  background-position: center;
-  background-color: black;
+  background-image: none;
   }
 
   .row4{
-  background-size: 200px;
-  background-position: center;
-  background-color: black;
+  background-image: none;
   }
 
-  .panel{
-    background-color: rgba(0,0,0, .8)
+  #ihsmarkit{
+    display: none;
   }
+
 }
 </style>
