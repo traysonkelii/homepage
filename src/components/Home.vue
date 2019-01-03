@@ -102,21 +102,6 @@
              to begin my career at such an amazing company and look forward to the future.
           </h3>
         </div>
-        <!-- <div class="gm-skill">
-            <h3>Technologies used</h3>
-            <div class="gm-skills">
-              <img src="../assets/javascriptlogo.png" alt="">
-              <img src="../assets/javalogo.png" alt="">
-              <img src="../assets/laravel.png" alt="">
-              <img src="../assets/html.png" alt="">
-              <img src="../assets/Unity.png" alt="">
-              <img src="../assets/css.png" alt="">
-              <img src="../assets/sharepoint.png" alt="">
-              <img src="../assets/php.png" alt="">
-              <img src="../assets/sql.png" alt="">
-              <img src="../assets/python.png" alt="">
-            </div>
-        </div> -->
       </div>
     </div>
     <div class="row3 basic">
