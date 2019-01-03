@@ -184,6 +184,7 @@
     </div>
     <div id="my-resume">
       <span id="my-x">X</span>
+      <img id="resume-img" src="../assets/resume2.png" alt="">
     </div>
   </div>
 </template>
@@ -283,6 +284,10 @@ window.onload = function () {
 </script>
 
 <style scoped>
+#resume-img{
+  display: none;
+}
+
 @viewport {
   width: device-width ;
   zoom: 1.0 ;
@@ -344,10 +349,11 @@ window.onload = function () {
   #my-resume{
     width: 100%;
     top:380px;
-    overflow: scroll;
-    background-size: cover;
-    background-repeat: no-repeat;
-    background-position: center center;
+    background-image: none;
+  }
+
+  #resume-img{
+    display: block;
   }
 
 }
