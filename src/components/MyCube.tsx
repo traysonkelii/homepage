@@ -16,7 +16,7 @@ function MyCube(props: ThreeElements["mesh"]) {
       onPointerOut={(event) => setHover(false)}
     >
       <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial color={hovered ? "blue" : "#008E97"} />
+      <meshStandardMaterial color={"#008E97"} />
     </mesh>
   );
 }
