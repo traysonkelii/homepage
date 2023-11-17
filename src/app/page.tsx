@@ -7,7 +7,7 @@ export default function Home() {
   return (
     <Holder>
       <h1>TRAYSON KELII</h1>
-      <h3>More Coming Soon</h3>
+      <h3>Coming Soon</h3>
       <Canvas>
         <ambientLight />
         <pointLight position={[10, 10, 10]} />
