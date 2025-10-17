@@ -19,7 +19,7 @@ export default function Home() {
 
 const Holder = styled.div`
   text-align: center;
-  background-color: black;
-  color: white;
+  background-color: white;
+  color: black;
   margin-top: 20%;
 `;
