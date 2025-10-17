@@ -2,6 +2,7 @@
 import MyCube from "@/components/MyCube";
 import CameraFeed from "@/components/CameraFeed";
 import { Canvas } from "@react-three/fiber";
+import { OrbitControls } from "@react-three/drei";
 import styled from "styled-components";
 
 export default function Home() {
@@ -28,6 +29,7 @@ export default function Home() {
                 />
                 <pointLight position={[-10, -10, -10]} intensity={0.5} />
                 <MyCube position={[0, 0, 0]} scale={[2, 2, 2]} />
+                <OrbitControls enableZoom={false} enablePan={false} />
               </Canvas>
             </CanvasCard>
             <CanvasLabel>Interactive Rubiks Cube • Drag to rotate</CanvasLabel>
@@ -41,6 +43,8 @@ export default function Home() {
     </PageContainer>
   );
 }
+
+// ... rest of styled components stay the same
 
 const PageContainer = styled.div`
   min-height: 100vh;

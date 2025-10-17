@@ -1,9 +1,18 @@
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import * as THREE from "three";
-import { useFrame, ThreeElements } from "@react-three/fiber";
+import { useFrame, ThreeElements, useThree } from "@react-three/fiber";
 
 function MyCube(props: ThreeElements["group"]) {
   const groupRef = useRef<THREE.Group>(null!);
+  const { viewport } = useThree();
+
+  // Mouse interaction state
+  const [isDragging, setIsDragging] = useState(false);
+  const [previousMousePosition, setPreviousMousePosition] = useState({
+    x: 0,
+    y: 0,
+  });
+  const rotationVelocity = useRef({ x: 0, y: 0 });
 
   // Rubik's cube standard colors
   const colors = {
@@ -16,12 +25,49 @@ function MyCube(props: ThreeElements["group"]) {
   };
 
   useFrame((state, delta) => {
-    groupRef.current.rotation.x += delta * 0.3;
-    groupRef.current.rotation.y += delta * 0.5;
+    if (!isDragging) {
+      // Auto-rotation when not dragging
+      groupRef.current.rotation.x += delta * 0.3 + rotationVelocity.current.x;
+      groupRef.current.rotation.y += delta * 0.5 + rotationVelocity.current.y;
+
+      // Damping - slow down velocity over time
+      rotationVelocity.current.x *= 0.95;
+      rotationVelocity.current.y *= 0.95;
+    }
+
+    // Floating animation
     groupRef.current.position.y = Math.sin(state.clock.elapsedTime) * 0.3;
   });
 
-  // Create a single cubie (small cube)
+  const handlePointerDown = (e: any) => {
+    setIsDragging(true);
+    setPreviousMousePosition({ x: e.clientX, y: e.clientY });
+    e.stopPropagation();
+  };
+
+  const handlePointerUp = () => {
+    setIsDragging(false);
+  };
+
+  const handlePointerMove = (e: any) => {
+    if (isDragging) {
+      const deltaX = e.clientX - previousMousePosition.x;
+      const deltaY = e.clientY - previousMousePosition.y;
+
+      // Update rotation based on mouse movement
+      groupRef.current.rotation.y += deltaX * 0.01;
+      groupRef.current.rotation.x += deltaY * 0.01;
+
+      // Set velocity for momentum effect
+      rotationVelocity.current.x = deltaY * 0.01;
+      rotationVelocity.current.y = deltaX * 0.01;
+
+      setPreviousMousePosition({ x: e.clientX, y: e.clientY });
+      e.stopPropagation();
+    }
+  };
+
+  // Create a single cubie
   const Cubie = ({
     position,
     faceColors,
@@ -44,7 +90,6 @@ function MyCube(props: ThreeElements["group"]) {
           <boxGeometry args={[0.32, 0.32, 0.32]} />
           <primitive object={materials} attach="material" />
         </mesh>
-        {/* Black edges */}
         <lineSegments>
           <edgesGeometry args={[new THREE.BoxGeometry(0.32, 0.32, 0.32)]} />
           <lineBasicMaterial color="#000000" linewidth={3} />
@@ -53,10 +98,10 @@ function MyCube(props: ThreeElements["group"]) {
     );
   };
 
-  // Generate all 27 cubies (3x3x3)
+  // Generate all 27 cubies
   const renderCubies = () => {
     const cubies = [];
-    const positions = [-0.34, 0, 0.34]; // Positions for 3x3x3 grid
+    const positions = [-0.34, 0, 0.34];
 
     for (let x = 0; x < 3; x++) {
       for (let y = 0; y < 3; y++) {
@@ -67,15 +112,13 @@ function MyCube(props: ThreeElements["group"]) {
             positions[z],
           ];
 
-          // Determine face colors based on position
-          // [right, left, top, bottom, front, back]
           const faceColors = [
-            x === 2 ? colors.red : "#1a1a1a", // Right face
-            x === 0 ? colors.orange : "#1a1a1a", // Left face
-            y === 2 ? colors.white : "#1a1a1a", // Top face
-            y === 0 ? colors.yellow : "#1a1a1a", // Bottom face
-            z === 2 ? colors.green : "#1a1a1a", // Front face
-            z === 0 ? colors.blue : "#1a1a1a", // Back face
+            x === 2 ? colors.red : "#1a1a1a",
+            x === 0 ? colors.orange : "#1a1a1a",
+            y === 2 ? colors.white : "#1a1a1a",
+            y === 0 ? colors.yellow : "#1a1a1a",
+            z === 2 ? colors.green : "#1a1a1a",
+            z === 0 ? colors.blue : "#1a1a1a",
           ];
 
           cubies.push(
@@ -93,10 +136,16 @@ function MyCube(props: ThreeElements["group"]) {
   };
 
   return (
-    <group {...props} ref={groupRef}>
+    <group
+      {...props}
+      ref={groupRef}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={handlePointerUp}
+    >
       {renderCubies()}
 
-      {/* Subtle outer glow */}
       <mesh scale={1.15}>
         <boxGeometry args={[1.1, 1.1, 1.1]} />
         <meshBasicMaterial
