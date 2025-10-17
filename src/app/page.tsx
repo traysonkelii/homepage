@@ -13,7 +13,7 @@ export default function Home() {
       <ContentWrapper>
         <HeroSection>
           <Title>TRAYSON KELII</Title>
-          <Subtitle>Developer • Creator • Innovator</Subtitle>
+          <Subtitle>Engineer • Creator • Innovator</Subtitle>
         </HeroSection>
 
         <MainContent>
