@@ -26,15 +26,11 @@ export default function CameraFeed() {
       }
     };
 
-    // Initial fetch
     fetchMetadata();
-
-    // Refresh image every 5 seconds
     const imageInterval = setInterval(() => {
       setImageKey(Date.now());
     }, 5000);
 
-    // Fetch metadata every 2 seconds
     const metadataInterval = setInterval(fetchMetadata, 2000);
 
     return () => {
@@ -102,18 +98,18 @@ export default function CameraFeed() {
 }
 
 const CameraCard = styled.div`
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(30, 30, 30, 0.6);
   border-radius: 24px;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(192, 192, 192, 0.2);
   backdrop-filter: blur(10px);
   transition: transform 0.3s ease, box-shadow 0.3s ease;
 
   &:hover {
     transform: translateY(-5px);
-    box-shadow: 0 30px 80px rgba(102, 126, 234, 0.4),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+    box-shadow: 0 30px 80px rgba(192, 192, 192, 0.2),
+      inset 0 0 0 1px rgba(192, 192, 192, 0.3);
   }
 `;
 
@@ -122,8 +118,8 @@ const CameraHeader = styled.div`
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(20, 20, 20, 0.8);
+  border-bottom: 1px solid rgba(192, 192, 192, 0.1);
 `;
 
 const HeaderLeft = styled.div`
@@ -134,7 +130,7 @@ const HeaderLeft = styled.div`
 
 const CameraIcon = styled.div`
   font-size: 2rem;
-  filter: drop-shadow(0 0 10px rgba(102, 126, 234, 0.5));
+  filter: drop-shadow(0 0 10px rgba(192, 192, 192, 0.3));
 `;
 
 const HeaderText = styled.div`
@@ -146,13 +142,13 @@ const HeaderText = styled.div`
 const CameraTitle = styled.h3`
   font-size: 1.25rem;
   font-weight: 700;
-  color: #e2e8f0;
+  color: #e0e0e0;
   margin: 0;
 `;
 
 const CameraSubtitle = styled.p`
   font-size: 0.85rem;
-  color: #718096;
+  color: #909090;
   margin: 0;
 `;
 
@@ -163,8 +159,10 @@ const StatusBadge = styled.div<{ $isOnline: boolean }>`
   padding: 0.5rem 1rem;
   border-radius: 20px;
   background: ${(props) =>
-    props.$isOnline ? "rgba(72, 187, 120, 0.15)" : "rgba(245, 101, 101, 0.15)"};
-  color: ${(props) => (props.$isOnline ? "#68d391" : "#fc8181")};
+    props.$isOnline
+      ? "rgba(200, 200, 200, 0.15)"
+      : "rgba(100, 100, 100, 0.15)"};
+  color: ${(props) => (props.$isOnline ? "#d0d0d0" : "#808080")};
   font-size: 0.85rem;
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -174,9 +172,11 @@ const StatusDot = styled.div<{ $isOnline: boolean }>`
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: ${(props) => (props.$isOnline ? "#68d391" : "#fc8181")};
+  background: ${(props) => (props.$isOnline ? "#c0c0c0" : "#606060")};
   animation: ${(props) =>
     props.$isOnline ? "pulse 2s ease-in-out infinite" : "none"};
+  box-shadow: ${(props) =>
+    props.$isOnline ? "0 0 8px rgba(192, 192, 192, 0.8)" : "none"};
 
   @keyframes pulse {
     0%,
@@ -209,7 +209,7 @@ const OfflineOverlay = styled.div`
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -217,7 +217,7 @@ const OfflineOverlay = styled.div`
 `;
 
 const OfflineText = styled.p`
-  color: #fc8181;
+  color: #808080;
   font-size: 1.25rem;
   font-weight: 600;
 `;
@@ -226,8 +226,8 @@ const CameraFooter = styled.div`
   display: flex;
   justify-content: space-between;
   padding: 1rem 1.5rem;
-  background: rgba(255, 255, 255, 0.02);
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(20, 20, 20, 0.8);
+  border-top: 1px solid rgba(192, 192, 192, 0.1);
 `;
 
 const FooterInfo = styled.div`
@@ -237,13 +237,13 @@ const FooterInfo = styled.div`
 `;
 
 const InfoLabel = styled.span`
-  color: #718096;
+  color: #909090;
   font-size: 0.85rem;
   font-weight: 400;
 `;
 
 const InfoValue = styled.span`
-  color: #a78bfa;
+  color: #c0c0c0;
   font-size: 0.85rem;
   font-weight: 600;
 `;
