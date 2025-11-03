@@ -235,7 +235,7 @@ export default function CameraFeed() {
   return (
     <CameraCard>
       <Header>
-        <Title>📹 Camera Stream</Title>
+        <Title>Camera Stream</Title>
         <StatusBadge $isLive={isLive}>
           {isLive ? (
             <>
@@ -244,7 +244,6 @@ export default function CameraFeed() {
             </>
           ) : (
             <>
-              <ReplayIcon>📼</ReplayIcon>
               REPLAY
             </>
           )}
@@ -275,7 +274,6 @@ export default function CameraFeed() {
               controls={false}
             />
             <CachedBadge>
-              <CachedIcon>💾</CachedIcon>
               Cached Locally
             </CachedBadge>
             {videoError && (
@@ -300,7 +298,6 @@ export default function CameraFeed() {
 
       {!isLive && stats?.next_window && (
         <NextStreamInfo>
-          <InfoIcon>⏰</InfoIcon>
           <div>
             <InfoTitle>Next Stream</InfoTitle>
             <InfoText>{formatNextWindow()}</InfoText>
