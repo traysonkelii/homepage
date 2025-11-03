@@ -2,74 +2,54 @@
 import { useState, useEffect } from "react";
 import styled from "styled-components";
 
-interface CameraMetadata {
-  last_modified: number;
-  size_kb: number;
+interface StreamStats {
+  fps: number;
+  frame_count: number;
+  uptime: number;
+  camera_active: boolean;
 }
 
 export default function CameraFeed() {
-  const [metadata, setMetadata] = useState<CameraMetadata | null>(null);
-  const [imageKey, setImageKey] = useState(Date.now());
+  const [stats, setStats] = useState<StreamStats | null>(null);
   const [isOnline, setIsOnline] = useState(true);
 
   useEffect(() => {
-    const fetchMetadata = async () => {
+    const fetchStats = async () => {
       try {
-        const response = await fetch(
-          "https://live-camera.traysonkelii.com/camera.json"
-        );
+        const response = await fetch('https://live-camera.traysonkelii.com/api/stats');
         const data = await response.json();
-        setMetadata(data);
-        setIsOnline(true);
+        setStats(data);
+        setIsOnline(data.camera_active);
       } catch (error) {
         setIsOnline(false);
       }
     };
 
-    fetchMetadata();
-    const imageInterval = setInterval(() => {
-      setImageKey(Date.now());
-    }, 5000);
+    fetchStats();
+    const interval = setInterval(fetchStats, 1000);
 
-    const metadataInterval = setInterval(fetchMetadata, 2000);
-
-    return () => {
-      clearInterval(imageInterval);
-      clearInterval(metadataInterval);
-    };
+    return () => clearInterval(interval);
   }, []);
-
-  const getTimeAgo = () => {
-    if (!metadata) return "Loading...";
-
-    const lastMod = new Date(metadata.last_modified * 1000);
-    const now = new Date();
-    const seconds = Math.floor((now.getTime() - lastMod.getTime()) / 1000);
-
-    if (seconds < 60) return `${seconds}s ago`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    return `${Math.floor(seconds / 3600)}h ago`;
-  };
 
   return (
     <CameraCard>
       <CameraHeader>
         <HeaderLeft>
-          <CameraIcon>📸</CameraIcon>
+          <CameraIcon>📹</CameraIcon>
           <HeaderText>
             <CameraTitle>Live Camera</CameraTitle>
-            <CameraSubtitle>Updates every 15 seconds</CameraSubtitle>
+            <CameraSubtitle>Real-time streaming</CameraSubtitle>
           </HeaderText>
         </HeaderLeft>
         <StatusBadge $isOnline={isOnline}>
           <StatusDot $isOnline={isOnline} />
-          {isOnline ? "Online" : "Offline"}
+          {isOnline ? 'LIVE' : 'Offline'}
         </StatusBadge>
       </CameraHeader>
 
       <ImageContainer>
         <CameraImage
-          src={`https://live-camera.traysonkelii.com/camera.jpg?t=${imageKey}`}
+          src="https://live-camera.traysonkelii.com/video_feed"
           alt="Live Camera Feed"
           onError={() => setIsOnline(false)}
           onLoad={() => setIsOnline(true)}
@@ -82,20 +62,28 @@ export default function CameraFeed() {
       </ImageContainer>
 
       <CameraFooter>
-        <FooterInfo>
-          <InfoLabel>Last Update:</InfoLabel>
-          <InfoValue>{getTimeAgo()}</InfoValue>
-        </FooterInfo>
-        {metadata && (
-          <FooterInfo>
-            <InfoLabel>Size:</InfoLabel>
-            <InfoValue>{metadata.size_kb.toFixed(1)} KB</InfoValue>
-          </FooterInfo>
+        {stats && (
+          <>
+            <FooterInfo>
+              <InfoLabel>FPS:</InfoLabel>
+              <InfoValue>{stats.fps.toFixed(1)}</InfoValue>
+            </FooterInfo>
+            <FooterInfo>
+              <InfoLabel>Frames:</InfoLabel>
+              <InfoValue>{stats.frame_count.toLocaleString()}</InfoValue>
+            </FooterInfo>
+            <FooterInfo>
+              <InfoLabel>Uptime:</InfoLabel>
+              <InfoValue>{Math.floor(stats.uptime / 60)}m</InfoValue>
+            </FooterInfo>
+          </>
         )}
       </CameraFooter>
     </CameraCard>
   );
 }
+
+// ... (keep all the same styled components from before)
 
 const CameraCard = styled.div`
   background: rgba(30, 30, 30, 0.6);
