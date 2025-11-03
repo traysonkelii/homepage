@@ -140,7 +140,7 @@ export default function CameraFeed() {
     try {
       console.log('Downloading new video:', videoFilename);
       
-      const response = await fetch('https://live-camera.yourdomain.com/latest_video');
+      const response = await fetch('https://live-camera.traysonkelii.com/latest_video');
       
       if (!response.ok) {
         throw new Error('Failed to download video');
@@ -197,7 +197,7 @@ export default function CameraFeed() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch('https://live-camera.yourdomain.com/api/stats');
+        const response = await fetch('https://live-camera.traysonkelii.com/api/stats');
         const data = await response.json();
         setStats(data);
         
@@ -249,7 +249,7 @@ export default function CameraFeed() {
       <VideoContainer>
         {isLive ? (
           <LiveStream
-            src="https://live-camera.yourdomain.com/video_feed"
+            src="https://live-camera.traysonkelii.com/video_feed"
             alt="Live Stream"
           />
         ) : cachedVideoUrl ? (
