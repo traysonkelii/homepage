@@ -2,6 +2,8 @@
 import { useState, useEffect, useRef } from "react";
 import styled from "styled-components";
 
+const CAMERA_API_BASE = 'https://live-camera.traysonkelii.com';
+
 interface StreamStats {
   fps: number;
   frame_count: number;
@@ -17,7 +19,6 @@ interface StreamStats {
   recording: boolean;
 }
 
-// IndexedDB helper for video caching
 class VideoCache {
   private dbName = 'camera-cache';
   private storeName = 'videos';
@@ -67,32 +68,6 @@ class VideoCache {
       request.onsuccess = () => resolve();
     });
   }
-
-  async delete(key: string): Promise<void> {
-    if (!this.db) await this.init();
-    
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.storeName], 'readwrite');
-      const store = transaction.objectStore(this.storeName);
-      const request = store.delete(key);
-      
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
-    });
-  }
-
-  async clear(): Promise<void> {
-    if (!this.db) await this.init();
-    
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.storeName], 'readwrite');
-      const store = transaction.objectStore(this.storeName);
-      const request = store.clear();
-      
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
-    });
-  }
 }
 
 export default function CameraFeed() {
@@ -100,6 +75,7 @@ export default function CameraFeed() {
   const [cachedVideoUrl, setCachedVideoUrl] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [lastCachedVideo, setLastCachedVideo] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cacheRef = useRef<VideoCache>(new VideoCache());
   const downloadingRef = useRef<boolean>(false);
@@ -109,6 +85,8 @@ export default function CameraFeed() {
     cacheRef.current.init().then(() => {
       console.log('Video cache initialized');
       loadCachedVideo();
+    }).catch(err => {
+      console.error('Failed to initialize cache:', err);
     });
   }, []);
 
@@ -119,6 +97,7 @@ export default function CameraFeed() {
       const cachedFilename = localStorage.getItem('cached_video_filename');
       
       if (cachedBlob) {
+        console.log('Found cached blob, size:', cachedBlob.size);
         const url = URL.createObjectURL(cachedBlob);
         setCachedVideoUrl(url);
         setLastCachedVideo(cachedFilename);
@@ -132,18 +111,19 @@ export default function CameraFeed() {
   // Download and cache new video
   const downloadAndCacheVideo = async (videoFilename: string) => {
     if (downloadingRef.current) return;
-    if (videoFilename === lastCachedVideo) return; // Already have this video
+    if (videoFilename === lastCachedVideo) return;
     
     downloadingRef.current = true;
     setDownloadProgress(0);
+    setVideoError(null);
     
     try {
       console.log('Downloading new video:', videoFilename);
       
-      const response = await fetch('https://live-camera.traysonkelii.com/latest_video');
+      const response = await fetch(`${CAMERA_API_BASE}/latest_video`);
       
       if (!response.ok) {
-        throw new Error('Failed to download video');
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const reader = response.body?.getReader();
@@ -170,15 +150,25 @@ export default function CameraFeed() {
         }
       }
 
+      console.log(`Downloaded ${receivedLength} bytes`);
+
       // Create blob from chunks
-      const blob = new Blob(chunks, { type: 'video/mp4' });
+      // In downloadAndCacheVideo function, change:
+      const blob = new Blob(chunks, { type: 'video/mp4' }); // or keep auto-detect
+      console.log('Created blob, size:', blob.size);
       
       // Save to IndexedDB
       await cacheRef.current.set('latest_video', blob);
       localStorage.setItem('cached_video_filename', videoFilename);
       
+      // Revoke old URL if exists
+      if (cachedVideoUrl) {
+        URL.revokeObjectURL(cachedVideoUrl);
+      }
+      
       // Create URL and display
       const url = URL.createObjectURL(blob);
+      console.log('Created object URL:', url);
       setCachedVideoUrl(url);
       setLastCachedVideo(videoFilename);
       setDownloadProgress(null);
@@ -187,6 +177,7 @@ export default function CameraFeed() {
       
     } catch (error) {
       console.error('Failed to download/cache video:', error);
+      setVideoError(`Download failed: ${error}`);
       setDownloadProgress(null);
     } finally {
       downloadingRef.current = false;
@@ -197,23 +188,41 @@ export default function CameraFeed() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch('https://live-camera.traysonkelii.com/api/stats');
+        const response = await fetch(`${CAMERA_API_BASE}/api/stats`);
         const data = await response.json();
         setStats(data);
         
         // If we're offline and there's a new video available, download it
         if (!data.streaming_allowed && data.latest_video && data.latest_video !== lastCachedVideo) {
+          console.log('New video detected:', data.latest_video);
           downloadAndCacheVideo(data.latest_video);
         }
       } catch (error) {
-        console.error('Failed to fetch stats');
+        console.error('Failed to fetch stats:', error);
       }
     };
 
     fetchStats();
-    const interval = setInterval(fetchStats, 2000); // Check every 2 seconds
+    const interval = setInterval(fetchStats, 2000);
     return () => clearInterval(interval);
   }, [lastCachedVideo]);
+
+  // Handle video events
+  const handleVideoLoad = () => {
+    console.log('Video loaded successfully');
+    if (videoRef.current) {
+      videoRef.current.play().catch(err => {
+        console.error('Failed to play video:', err);
+        setVideoError('Failed to play video');
+      });
+    }
+  };
+
+  const handleVideoError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
+    const video = e.currentTarget;
+    console.error('Video error:', video.error);
+    setVideoError(`Video error: ${video.error?.message || 'Unknown error'}`);
+  };
 
   const formatNextWindow = () => {
     if (!stats?.next_window) return 'No upcoming streams';
@@ -249,7 +258,7 @@ export default function CameraFeed() {
       <VideoContainer>
         {isLive ? (
           <LiveStream
-            src="https://live-camera.traysonkelii.com/video_feed"
+            src={`${CAMERA_API_BASE}/video_feed`}
             alt="Live Stream"
           />
         ) : cachedVideoUrl ? (
@@ -261,11 +270,17 @@ export default function CameraFeed() {
               muted
               playsInline
               src={cachedVideoUrl}
+              onLoadedData={handleVideoLoad}
+              onError={handleVideoError}
+              controls={false}
             />
             <CachedBadge>
               <CachedIcon>💾</CachedIcon>
               Cached Locally
             </CachedBadge>
+            {videoError && (
+              <ErrorOverlay>{videoError}</ErrorOverlay>
+            )}
           </>
         ) : downloadProgress !== null ? (
           <DownloadingMessage>
@@ -424,6 +439,18 @@ const CachedBadge = styled.div`
 
 const CachedIcon = styled.span`
   font-size: 1.2em;
+`;
+
+const ErrorOverlay = styled.div`
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(255, 0, 0, 0.8);
+  color: white;
+  padding: 10px;
+  font-size: 0.9em;
+  text-align: center;
 `;
 
 const OfflineMessage = styled.div`
