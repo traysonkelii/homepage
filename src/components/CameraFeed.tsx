@@ -94,7 +94,13 @@ export default function CameraFeed() {
   const loadCachedVideo = async () => {
     try {
       const cachedBlob = await cacheRef.current.get('latest_video');
-      const cachedFilename = localStorage.getItem('cached_video_filename');
+      let cachedFilename: string | null = null;
+
+      try {
+        cachedFilename = localStorage.getItem('cached_video_filename');
+      } catch (storageError) {
+        console.warn('Failed to read cached video filename:', storageError);
+      }
       
       if (cachedBlob) {
         console.log('Found cached blob, size:', cachedBlob.size);
@@ -126,54 +132,67 @@ export default function CameraFeed() {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const reader = response.body?.getReader();
-      const contentLength = parseInt(response.headers.get('Content-Length') || '0');
-      
-      if (!reader) {
-        throw new Error('No reader available');
-      }
+      const handleBlob = async (blob: Blob) => {
+        console.log('Created blob, size:', blob.size);
+        
+        const objectUrl = URL.createObjectURL(blob);
 
-      let receivedLength = 0;
-      const chunks: Uint8Array[] = [];
+        // Replace existing URL if present
+        setCachedVideoUrl(prevUrl => {
+          if (prevUrl) {
+            URL.revokeObjectURL(prevUrl);
+          }
+          return objectUrl;
+        });
+        setLastCachedVideo(videoFilename);
+        setDownloadProgress(null);
 
-      while (true) {
-        const { done, value } = await reader.read();
-        
-        if (done) break;
-        
-        chunks.push(value);
-        receivedLength += value.length;
-        
-        if (contentLength > 0) {
-          const progress = (receivedLength / contentLength) * 100;
-          setDownloadProgress(progress);
+        try {
+          await cacheRef.current.set('latest_video', blob);
+        } catch (cacheError) {
+          console.warn('Failed to cache video in IndexedDB:', cacheError);
         }
-      }
 
-      console.log(`Downloaded ${receivedLength} bytes`);
+        try {
+          localStorage.setItem('cached_video_filename', videoFilename);
+        } catch (storageError) {
+          console.warn('Failed to persist cached video filename:', storageError);
+        }
 
-      // Create blob from chunks
-      // In downloadAndCacheVideo function, change:
-      const blob = new Blob(chunks, { type: 'video/mp4' }); // or keep auto-detect
-      console.log('Created blob, size:', blob.size);
-      
-      // Save to IndexedDB
-      await cacheRef.current.set('latest_video', blob);
-      localStorage.setItem('cached_video_filename', videoFilename);
-      
-      // Revoke old URL if exists
-      if (cachedVideoUrl) {
-        URL.revokeObjectURL(cachedVideoUrl);
+        console.log('Video processed successfully:', videoFilename);
+      };
+
+      const reader = response.body && typeof response.body.getReader === 'function'
+        ? response.body.getReader()
+        : null;
+      const contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
+
+      if (reader) {
+        let receivedLength = 0;
+        const chunks: Uint8Array[] = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            receivedLength += value.length;
+          }
+
+          if (contentLength > 0 && receivedLength <= contentLength) {
+            const progress = (receivedLength / contentLength) * 100;
+            setDownloadProgress(progress);
+          }
+        }
+
+        console.log(`Downloaded ${receivedLength} bytes`);
+        await handleBlob(new Blob(chunks, { type: 'video/mp4' }));
+      } else {
+        console.log('ReadableStream not available, falling back to response.blob()');
+        const blob = await response.blob();
+        await handleBlob(blob);
       }
-      
-      // Create URL and display
-      const url = URL.createObjectURL(blob);
-      console.log('Created object URL:', url);
-      setCachedVideoUrl(url);
-      setLastCachedVideo(videoFilename);
-      setDownloadProgress(null);
-      
-      console.log('Video cached successfully:', videoFilename);
       
     } catch (error) {
       console.error('Failed to download/cache video:', error);
