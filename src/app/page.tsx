@@ -1,11 +1,39 @@
 "use client";
+import { useEffect, useState } from "react";
 import MyCube from "@/components/MyCube";
 import CameraFeed from "@/components/CameraFeed";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import styled from "styled-components";
 
+const useIsMobile = (maxWidth = 968): boolean => {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia(`(max-width: ${maxWidth}px)`);
+    const updateMatch = (event: MediaQueryListEvent) => setIsMobile(event.matches);
+
+    setIsMobile(mediaQuery.matches);
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", updateMatch);
+      return () => mediaQuery.removeEventListener("change", updateMatch);
+    }
+
+    mediaQuery.addListener(updateMatch);
+    return () => mediaQuery.removeListener(updateMatch);
+  }, [maxWidth]);
+
+  return isMobile;
+};
+
 export default function Home() {
+  const isMobile = useIsMobile();
+
   return (
     <PageContainer>
       <GradientBackground />
@@ -17,23 +45,27 @@ export default function Home() {
         </HeroSection>
 
         <MainContent>
-          <CanvasSection>
-            <CanvasCard>
-              <Canvas camera={{ position: [0, 0, 8], fov: 50 }}>
-                <ambientLight intensity={0.8} />
-                <spotLight
-                  position={[10, 10, 10]}
-                  angle={0.15}
-                  penumbra={1}
-                  intensity={1.5}
-                />
-                <pointLight position={[-10, -10, -10]} intensity={0.5} />
-                <MyCube position={[0, 0, 0]} scale={[2, 2, 2]} />
-                <OrbitControls enableZoom={false} enablePan={false} />
-              </Canvas>
-            </CanvasCard>
-            <CanvasLabel>Interactive Rubiks Cube • Drag to rotate</CanvasLabel>
-          </CanvasSection>
+          {!isMobile && (
+            <CanvasSection>
+              <CanvasCard>
+                <Canvas camera={{ position: [0, 0, 8], fov: 50 }}>
+                  <ambientLight intensity={0.8} />
+                  <spotLight
+                    position={[10, 10, 10]}
+                    angle={0.15}
+                    penumbra={1}
+                    intensity={1.5}
+                  />
+                  <pointLight position={[-10, -10, -10]} intensity={0.5} />
+                  <MyCube position={[0, 0, 0]} scale={[2, 2, 2]} />
+                  <OrbitControls enableZoom={false} enablePan={false} />
+                </Canvas>
+              </CanvasCard>
+              <CanvasLabel>
+                Interactive Rubiks Cube • Drag to rotate
+              </CanvasLabel>
+            </CanvasSection>
+          )}
 
           <CameraSection>
             <CameraFeed />
