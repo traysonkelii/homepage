@@ -79,6 +79,7 @@ export default function CameraFeed() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const cacheRef = useRef<VideoCache>(new VideoCache());
   const downloadingRef = useRef<boolean>(false);
+  const initialFetchRef = useRef<boolean>(false);
 
   // Initialize cache
   useEffect(() => {
@@ -94,13 +95,7 @@ export default function CameraFeed() {
   const loadCachedVideo = async () => {
     try {
       const cachedBlob = await cacheRef.current.get('latest_video');
-      let cachedFilename: string | null = null;
-
-      try {
-        cachedFilename = localStorage.getItem('cached_video_filename');
-      } catch (storageError) {
-        console.warn('Failed to read cached video filename:', storageError);
-      }
+      const cachedFilename = localStorage.getItem('cached_video_filename');
       
       if (cachedBlob) {
         console.log('Found cached blob, size:', cachedBlob.size);
@@ -115,9 +110,9 @@ export default function CameraFeed() {
   };
 
   // Download and cache new video
-  const downloadAndCacheVideo = async (videoFilename: string) => {
+  const downloadAndCacheVideo = async (videoFilename: string, force = false) => {
     if (downloadingRef.current) return;
-    if (videoFilename === lastCachedVideo) return;
+    if (!force && videoFilename === lastCachedVideo) return;
     
     downloadingRef.current = true;
     setDownloadProgress(0);
@@ -126,78 +121,70 @@ export default function CameraFeed() {
     try {
       console.log('Downloading new video:', videoFilename);
       
-      const response = await fetch(`${CAMERA_API_BASE}/latest_video`);
+      const cacheBypassToken = Date.now();
+      const response = await fetch(`${CAMERA_API_BASE}/latest_video?ts=${cacheBypassToken}`, {
+        cache: 'no-store',
+      });
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const handleBlob = async (blob: Blob) => {
-        console.log('Created blob, size:', blob.size);
-        
-        const objectUrl = URL.createObjectURL(blob);
-
-        // Replace existing URL if present
-        setCachedVideoUrl(prevUrl => {
-          if (prevUrl) {
-            URL.revokeObjectURL(prevUrl);
-          }
-          return objectUrl;
-        });
-        setLastCachedVideo(videoFilename);
-        setDownloadProgress(null);
-
-        try {
-          await cacheRef.current.set('latest_video', blob);
-        } catch (cacheError) {
-          console.warn('Failed to cache video in IndexedDB:', cacheError);
-        }
-
-        try {
-          localStorage.setItem('cached_video_filename', videoFilename);
-        } catch (storageError) {
-          console.warn('Failed to persist cached video filename:', storageError);
-        }
-
-        console.log('Video processed successfully:', videoFilename);
-      };
-
-      const reader = response.body && typeof response.body.getReader === 'function'
-        ? response.body.getReader()
-        : null;
-      const contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
-
-      if (reader) {
-        let receivedLength = 0;
-        const chunks: Uint8Array[] = [];
-
-        while (true) {
-          const { done, value } = await reader.read();
-          
-          if (done) break;
-          if (value) {
-            chunks.push(value);
-            receivedLength += value.length;
-          }
-
-          if (contentLength > 0 && receivedLength <= contentLength) {
-            const progress = (receivedLength / contentLength) * 100;
-            setDownloadProgress(progress);
-          }
-        }
-
-        console.log(`Downloaded ${receivedLength} bytes`);
-        await handleBlob(new Blob(chunks, { type: 'video/mp4' }));
-      } else {
-        console.log('ReadableStream not available, falling back to response.blob()');
-        const blob = await response.blob();
-        await handleBlob(blob);
+      const reader = response.body?.getReader();
+      const contentLength = parseInt(response.headers.get('Content-Length') || '0');
+      
+      if (!reader) {
+        throw new Error('No reader available');
       }
+
+      let receivedLength = 0;
+      const chunks: Uint8Array[] = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+        
+        chunks.push(value);
+        receivedLength += value.length;
+        
+        if (contentLength > 0) {
+          const progress = (receivedLength / contentLength) * 100;
+          setDownloadProgress(progress);
+        }
+      }
+
+      console.log(`Downloaded ${receivedLength} bytes`);
+
+      // Create blob from chunks
+      const blob = new Blob(chunks, { type: 'video/mp4' }); // or keep auto-detect
+      console.log('Created blob, size:', blob.size);
+      
+      // Save to IndexedDB
+      await cacheRef.current.set('latest_video', blob);
+      localStorage.setItem('cached_video_filename', videoFilename);
+      
+      // Revoke old URL if exists
+      if (cachedVideoUrl) {
+        URL.revokeObjectURL(cachedVideoUrl);
+      }
+      
+      // Create URL and display
+      const url = URL.createObjectURL(blob);
+      console.log('Created object URL:', url);
+      setCachedVideoUrl(url);
+      setLastCachedVideo(videoFilename);
+      setDownloadProgress(null);
+      
+      console.log('Video cached successfully:', videoFilename);
       
     } catch (error) {
       console.error('Failed to download/cache video:', error);
       setVideoError(`Download failed: ${error}`);
       setDownloadProgress(null);
+      if (force) {
+        initialFetchRef.current = false;
+      }
     } finally {
       downloadingRef.current = false;
     }
@@ -210,11 +197,22 @@ export default function CameraFeed() {
         const response = await fetch(`${CAMERA_API_BASE}/api/stats`);
         const data = await response.json();
         setStats(data);
-        
-        // If we're offline and there's a new video available, download it
-        if (!data.streaming_allowed && data.latest_video && data.latest_video !== lastCachedVideo) {
-          console.log('New video detected:', data.latest_video);
-          downloadAndCacheVideo(data.latest_video);
+
+        if (data.streaming_allowed) {
+          initialFetchRef.current = false;
+          return;
+        }
+
+        if (data.latest_video) {
+          // Ensure we hit the network once whenever the stream falls back to replay mode.
+          if (!initialFetchRef.current) {
+            console.log('Forcing latest video refresh:', data.latest_video);
+            initialFetchRef.current = true;
+            downloadAndCacheVideo(data.latest_video, true);
+          } else if (data.latest_video !== lastCachedVideo) {
+            console.log('New video detected:', data.latest_video);
+            downloadAndCacheVideo(data.latest_video);
+          }
         }
       } catch (error) {
         console.error('Failed to fetch stats:', error);
