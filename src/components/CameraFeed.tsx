@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import styled from "styled-components";
+import styled, { keyframes, css } from "styled-components";
 
 const CAMERA_API_BASE = 'https://live-camera.traysonkelii.com';
 
@@ -19,400 +19,184 @@ interface StreamStats {
   recording: boolean;
 }
 
-class VideoCache {
-  private dbName = 'camera-cache';
-  private storeName = 'videos';
-  private db: IDBDatabase | null = null;
-
-  async init(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, 1);
-      
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        this.db = request.result;
-        resolve();
-      };
-      
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains(this.storeName)) {
-          db.createObjectStore(this.storeName);
-        }
-      };
-    });
-  }
-
-  async get(key: string): Promise<Blob | null> {
-    if (!this.db) await this.init();
-    
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.storeName], 'readonly');
-      const store = transaction.objectStore(this.storeName);
-      const request = store.get(key);
-      
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result || null);
-    });
-  }
-
-  async set(key: string, value: Blob): Promise<void> {
-    if (!this.db) await this.init();
-    
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.storeName], 'readwrite');
-      const store = transaction.objectStore(this.storeName);
-      const request = store.put(value, key);
-      
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
-    });
-  }
-}
-
 export default function CameraFeed() {
   const [stats, setStats] = useState<StreamStats | null>(null);
-  const [cachedVideoUrl, setCachedVideoUrl] = useState<string | null>(null);
-  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
-  const [lastCachedVideo, setLastCachedVideo] = useState<string | null>(null);
-  const [videoError, setVideoError] = useState<string | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const cacheRef = useRef<VideoCache>(new VideoCache());
-  const downloadingRef = useRef<boolean>(false);
-  const initialFetchRef = useRef<boolean>(false);
+  const [loading, setLoading] = useState(true);
 
-  // Initialize cache
-  useEffect(() => {
-    cacheRef.current.init().then(() => {
-      console.log('Video cache initialized');
-      loadCachedVideo();
-    }).catch(err => {
-      console.error('Failed to initialize cache:', err);
-    });
-  }, []);
-
-  // Load cached video from IndexedDB
-  const loadCachedVideo = async () => {
-    try {
-      const cachedBlob = await cacheRef.current.get('latest_video');
-      const cachedFilename = localStorage.getItem('cached_video_filename');
-      
-      if (cachedBlob) {
-        console.log('Found cached blob, size:', cachedBlob.size);
-        const url = URL.createObjectURL(cachedBlob);
-        setCachedVideoUrl(url);
-        setLastCachedVideo(cachedFilename);
-        console.log('Loaded cached video:', cachedFilename);
-      }
-    } catch (error) {
-      console.error('Failed to load cached video:', error);
-    }
-  };
-
-  // Download and cache new video
-  const downloadAndCacheVideo = async (videoFilename: string, force = false) => {
-    if (downloadingRef.current) return;
-    if (!force && videoFilename === lastCachedVideo) return;
-    
-    downloadingRef.current = true;
-    setDownloadProgress(0);
-    setVideoError(null);
-    
-    try {
-      console.log('Downloading new video:', videoFilename);
-      
-      const cacheBypassToken = Date.now();
-      const response = await fetch(`${CAMERA_API_BASE}/latest_video?ts=${cacheBypassToken}`, {
-        cache: 'no-store',
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const reader = response.body?.getReader();
-      const contentLength = parseInt(response.headers.get('Content-Length') || '0');
-      
-      if (!reader) {
-        throw new Error('No reader available');
-      }
-
-      let receivedLength = 0;
-      const chunks: Uint8Array[] = [];
-
-      while (true) {
-        const { done, value } = await reader.read();
-        
-        if (done) break;
-        
-        chunks.push(value);
-        receivedLength += value.length;
-        
-        if (contentLength > 0) {
-          const progress = (receivedLength / contentLength) * 100;
-          setDownloadProgress(progress);
-        }
-      }
-
-      console.log(`Downloaded ${receivedLength} bytes`);
-
-      // Create blob from chunks
-      const blob = new Blob(chunks, { type: 'video/mp4' }); // or keep auto-detect
-      console.log('Created blob, size:', blob.size);
-      
-      // Save to IndexedDB
-      await cacheRef.current.set('latest_video', blob);
-      localStorage.setItem('cached_video_filename', videoFilename);
-      
-      // Revoke old URL if exists
-      if (cachedVideoUrl) {
-        URL.revokeObjectURL(cachedVideoUrl);
-      }
-      
-      // Create URL and display
-      const url = URL.createObjectURL(blob);
-      console.log('Created object URL:', url);
-      setCachedVideoUrl(url);
-      setLastCachedVideo(videoFilename);
-      setDownloadProgress(null);
-      
-      console.log('Video cached successfully:', videoFilename);
-      
-    } catch (error) {
-      console.error('Failed to download/cache video:', error);
-      setVideoError(`Download failed: ${error}`);
-      setDownloadProgress(null);
-      if (force) {
-        initialFetchRef.current = false;
-      }
-    } finally {
-      downloadingRef.current = false;
-    }
-  };
-
-  // Fetch stats and check for new videos
+  // Poll for stats
   useEffect(() => {
     const fetchStats = async () => {
       try {
         const response = await fetch(`${CAMERA_API_BASE}/api/stats`);
         const data = await response.json();
         setStats(data);
-
-        if (data.streaming_allowed) {
-          initialFetchRef.current = false;
-          return;
-        }
-
-        if (data.latest_video) {
-          // Ensure we hit the network once whenever the stream falls back to replay mode.
-          if (!initialFetchRef.current) {
-            console.log('Forcing latest video refresh:', data.latest_video);
-            initialFetchRef.current = true;
-            downloadAndCacheVideo(data.latest_video, true);
-          } else if (data.latest_video !== lastCachedVideo) {
-            console.log('New video detected:', data.latest_video);
-            downloadAndCacheVideo(data.latest_video);
-          }
-        }
+        setLoading(false);
       } catch (error) {
         console.error('Failed to fetch stats:', error);
+        setLoading(false);
       }
     };
 
     fetchStats();
     const interval = setInterval(fetchStats, 2000);
     return () => clearInterval(interval);
-  }, [lastCachedVideo]);
-
-  // Handle video events
-  const handleVideoLoad = () => {
-    console.log('Video loaded successfully');
-    if (videoRef.current) {
-      videoRef.current.play().catch(err => {
-        console.error('Failed to play video:', err);
-        setVideoError('Failed to play video');
-      });
-    }
-  };
-
-  const handleVideoError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
-    const video = e.currentTarget;
-    console.error('Video error:', video.error);
-    setVideoError(`Video error: ${video.error?.message || 'Unknown error'}`);
-  };
-
-  const formatNextWindow = () => {
-    if (!stats?.next_window) return 'No upcoming streams';
-    const date = new Date(stats.next_window.time);
-    return `${stats.next_window.name} at ${date.toLocaleTimeString()}`;
-  };
+  }, []);
 
   const isLive = stats?.streaming_allowed || false;
+  
+  const formatNextTime = (isoTime: string) => {
+    const date = new Date(isoTime);
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  };
 
   return (
     <CameraCard>
       <Header>
-        <Title>Camera Stream</Title>
+        <Title>Hummingbird Nest</Title>
         <StatusBadge $isLive={isLive}>
           {isLive ? (
             <>
               <LiveDot />
-              LIVE
+              LIVE FEED
             </>
           ) : (
             <>
-              REPLAY
+              <MoonIcon>🌙</MoonIcon>
+              SLEEPING
             </>
           )}
         </StatusBadge>
       </Header>
 
-      {stats?.current_window && isLive && (
-        <CurrentWindow>{stats.current_window}</CurrentWindow>
-      )}
-
       <VideoContainer>
-        {isLive ? (
-          <LiveStream
-            src={`${CAMERA_API_BASE}/video_feed`}
-            alt="Live Stream"
-          />
-        ) : cachedVideoUrl ? (
+        {loading ? (
+          <OfflineMessage>
+            <p>Connecting to Nest...</p>
+          </OfflineMessage>
+        ) : isLive ? (
+          // --- LIVE VIEW ---
           <>
-            <ReplayVideo
-              ref={videoRef}
-              autoPlay
-              loop
-              muted
-              playsInline
-              src={cachedVideoUrl}
-              onLoadedData={handleVideoLoad}
-              onError={handleVideoError}
-              controls={false}
+             {/* Use a cache buster to ensure the image refreshes if connection drops */}
+            <LiveStream
+              src={`${CAMERA_API_BASE}/video_feed`}
+              alt="Live Stream"
+              onError={(e) => {
+                 // Simple retry logic if stream breaks
+                 const target = e.target as HTMLImageElement;
+                 setTimeout(() => {
+                    target.src = `${CAMERA_API_BASE}/video_feed?t=${Date.now()}`;
+                 }, 1000);
+              }}
             />
-            <CachedBadge>
-              Cached Locally
-            </CachedBadge>
-            {videoError && (
-              <ErrorOverlay>{videoError}</ErrorOverlay>
+            {stats && (
+              <OverlayStats>
+                FPS: {stats.fps}
+                {stats.recording && <RecTag>● REC</RecTag>}
+              </OverlayStats>
             )}
           </>
-        ) : downloadProgress !== null ? (
-          <DownloadingMessage>
-            <h3>Downloading Video...</h3>
-            <ProgressBar>
-              <ProgressFill $progress={downloadProgress} />
-            </ProgressBar>
-            <p>{downloadProgress.toFixed(0)}%</p>
-          </DownloadingMessage>
         ) : (
-          <OfflineMessage>
-            <h3>No Video Available</h3>
-            <p>Waiting for first recording...</p>
-          </OfflineMessage>
+          // --- NIGHT / SLEEPING VIEW ---
+          <NightModeOverlay>
+            <SleepAnimation>
+              <BirdWrapper>🐦</BirdWrapper>
+              <ZzzWrapper>
+                <Zzz $delay="0s">z</Zzz>
+                <Zzz $delay="1s">z</Zzz>
+                <Zzz $delay="2s">z</Zzz>
+              </ZzzWrapper>
+            </SleepAnimation>
+            <NightTitle>Shhh... The birds are sleeping.</NightTitle>
+            <NightSubText>
+              Camera is in night mode to not disturb the nest.
+            </NightSubText>
+            
+            {stats?.next_window && (
+              <NextWindowPill>
+                Next Stream: {formatNextTime(stats.next_window.time)}
+              </NextWindowPill>
+            )}
+          </NightModeOverlay>
         )}
       </VideoContainer>
-
-      {!isLive && stats?.next_window && (
-        <NextStreamInfo>
-          <div>
-            <InfoTitle>Next Stream</InfoTitle>
-            <InfoText>{formatNextWindow()}</InfoText>
-          </div>
-        </NextStreamInfo>
-      )}
-
-      {isLive && stats && (
-        <Stats>
-          <StatItem>
-            <StatLabel>FPS</StatLabel>
-            <StatValue>{stats.fps}</StatValue>
-          </StatItem>
-          <StatItem>
-            <StatLabel>Frames</StatLabel>
-            <StatValue>{stats.frame_count.toLocaleString()}</StatValue>
-          </StatItem>
-          {stats.recording && (
-            <StatItem>
-              <RecordingIndicator>● REC</RecordingIndicator>
-            </StatItem>
-          )}
-        </Stats>
-      )}
     </CameraCard>
   );
 }
 
+// --- ANIMATIONS ---
+
+const float = keyframes`
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-10px) rotate(2deg); }
+`;
+
+const zzzFloat = keyframes`
+  0% { opacity: 0; transform: translate(0, 0) scale(0.5); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(20px, -30px) scale(1.2); }
+`;
+
+const pulse = keyframes`
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+`;
+
+// --- STYLED COMPONENTS ---
+
 const CameraCard = styled.div`
-  background: rgba(30, 30, 30, 0.6);
+  background: #111;
   border-radius: 24px;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5),
-              inset 0 0 0 1px rgba(192, 192, 192, 0.2);
-  backdrop-filter: blur(10px);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-
-  &:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 30px 80px rgba(192, 192, 192, 0.2),
-                inset 0 0 0 1px rgba(192, 192, 192, 0.3);
-  }
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6),
+              inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+  font-family: 'Inter', sans-serif;
 `;
 
 const Header = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem;
-  background: rgba(20, 20, 20, 0.8);
-  border-bottom: 1px solid rgba(192, 192, 192, 0.1);
+  padding: 1.2rem 1.5rem;
+  background: rgba(20, 20, 20, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 `;
 
 const Title = styled.h2`
-  color: #e0e0e0;
+  color: #fff;
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 `;
 
 const StatusBadge = styled.div<{ $isLive: boolean }>`
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: 20px;
+  padding: 0.4rem 0.8rem;
+  border-radius: 100px;
   background: ${props => props.$isLive 
-    ? 'rgba(255, 0, 0, 0.2)' 
-    : 'rgba(255, 255, 0, 0.2)'};
-  color: ${props => props.$isLive ? '#ff4444' : '#ffff00'};
-  font-size: 0.9rem;
+    ? 'rgba(255, 59, 48, 0.15)' 
+    : 'rgba(94, 92, 230, 0.15)'};
+  color: ${props => props.$isLive ? '#ff3b30' : '#5e5ce6'};
+  font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.05em;
 `;
 
 const LiveDot = styled.div`
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: #ff0000;
-  animation: pulse 2s ease-in-out infinite;
-  box-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
+  background: currentColor;
+  animation: ${pulse} 2s ease-in-out infinite;
 `;
 
-const ReplayIcon = styled.span`
-  font-size: 1.2em;
-`;
-
-const CurrentWindow = styled.div`
-  color: #ffff00;
+const MoonIcon = styled.span`
   font-size: 0.9em;
-  padding: 0.5rem 1.5rem;
-  text-align: center;
-  background: rgba(255, 255, 0, 0.1);
 `;
 
 const VideoContainer = styled.div`
@@ -420,6 +204,9 @@ const VideoContainer = styled.div`
   width: 100%;
   aspect-ratio: 16 / 9;
   background: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 `;
 
 const LiveStream = styled.img`
@@ -429,171 +216,92 @@ const LiveStream = styled.img`
   display: block;
 `;
 
-const ReplayVideo = styled.video`
+const OverlayStats = styled.div`
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.7rem;
+  font-family: monospace;
+  pointer-events: none;
+  display: flex;
+  gap: 8px;
+`;
+
+const RecTag = styled.span`
+  color: #ff3b30;
+  font-weight: bold;
+`;
+
+// --- NIGHT MODE STYLES ---
+
+const NightModeOverlay = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  display: block;
-`;
-
-const CachedBadge = styled.div`
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  background: rgba(0, 255, 0, 0.2);
-  color: #00ff00;
-  padding: 0.5rem 1rem;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  backdrop-filter: blur(5px);
-`;
-
-const CachedIcon = styled.span`
-  font-size: 1.2em;
-`;
-
-const ErrorOverlay = styled.div`
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(255, 0, 0, 0.8);
-  color: white;
-  padding: 10px;
-  font-size: 0.9em;
+  background: linear-gradient(180deg, #0a0a12 0%, #1a1a2e 100%);
+  color: #e0e0ff;
   text-align: center;
+  padding: 2rem;
+`;
+
+const SleepAnimation = styled.div`
+  position: relative;
+  margin-bottom: 2rem;
+`;
+
+const BirdWrapper = styled.div`
+  font-size: 4rem;
+  animation: ${float} 4s ease-in-out infinite;
+  filter: drop-shadow(0 10px 10px rgba(0,0,0,0.5));
+`;
+
+const ZzzWrapper = styled.div`
+  position: absolute;
+  top: -10px;
+  right: -20px;
+  width: 40px;
+  height: 40px;
+`;
+
+const Zzz = styled.span<{ $delay: string }>`
+  position: absolute;
+  font-weight: bold;
+  font-size: 1.2rem;
+  color: #8e8eff;
+  opacity: 0;
+  animation: ${zzzFloat} 3s ease-in infinite;
+  animation-delay: ${props => props.$delay};
+`;
+
+const NightTitle = styled.h3`
+  font-size: 1.5rem;
+  margin: 0 0 0.5rem 0;
+  color: #fff;
+`;
+
+const NightSubText = styled.p`
+  font-size: 0.9rem;
+  color: #8888aa;
+  margin: 0 0 2rem 0;
+`;
+
+const NextWindowPill = styled.div`
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.6rem 1.2rem;
+  border-radius: 50px;
+  font-size: 0.85rem;
+  color: #b0b0d0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 `;
 
 const OfflineMessage = styled.div`
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  text-align: center;
-  padding: 40px;
-  
-  h3 {
-    color: #f00;
-    margin-bottom: 20px;
-  }
-  
-  p {
-    color: #aaa;
-  }
-`;
-
-const DownloadingMessage = styled.div`
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  text-align: center;
-  padding: 40px;
-  
-  h3 {
-    color: #0ff;
-    margin-bottom: 20px;
-  }
-  
-  p {
-    color: #0ff;
-    font-size: 1.5em;
-    margin-top: 10px;
-  }
-`;
-
-const ProgressBar = styled.div`
-  width: 80%;
-  height: 20px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  overflow: hidden;
-  margin: 20px 0;
-`;
-
-const ProgressFill = styled.div<{ $progress: number }>`
-  width: ${props => props.$progress}%;
-  height: 100%;
-  background: linear-gradient(90deg, #00ffff, #00ff00);
-  transition: width 0.3s ease;
-`;
-
-const NextStreamInfo = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem 1.5rem;
-  background: rgba(20, 20, 20, 0.6);
-  border-top: 1px solid rgba(192, 192, 192, 0.1);
-`;
-
-const InfoIcon = styled.div`
-  font-size: 2rem;
-`;
-
-const InfoTitle = styled.div`
-  color: #c0c0c0;
+  color: #666;
   font-size: 0.9rem;
-  font-weight: 600;
-  margin-bottom: 0.25rem;
-`;
-
-const InfoText = styled.div`
-  color: #808080;
-  font-size: 0.85rem;
-`;
-
-const Stats = styled.div`
-  display: flex;
-  justify-content: space-around;
-  padding: 1rem 1.5rem;
-  background: rgba(20, 20, 20, 0.8);
-  border-top: 1px solid rgba(192, 192, 192, 0.1);
-`;
-
-const StatItem = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-`;
-
-const StatLabel = styled.div`
-  color: #909090;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-`;
-
-const StatValue = styled.div`
-  color: #c0c0c0;
-  font-size: 1.1rem;
-  font-weight: 600;
-`;
-
-const RecordingIndicator = styled.div`
-  color: #ff0000;
-  font-size: 0.85rem;
-  font-weight: 600;
-  animation: blink 2s ease-in-out infinite;
-
-  @keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
 `;
