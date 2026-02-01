@@ -69,7 +69,6 @@ export default function CameraFeed() {
             />
             {stats && (
               <OverlayStats>
-                FPS: {stats.fps}
                 {stats.recording && <RecTag>● REC</RecTag>}
               </OverlayStats>
             )}
