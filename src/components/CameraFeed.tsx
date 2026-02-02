@@ -1,82 +1,118 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import styled, { keyframes } from "styled-components";
 
-const CAMERA_API_BASE = 'https://live-camera.traysonkelii.com';
-
-interface StreamStats {
-  fps: number;
-  camera_active: boolean;
-  recording: boolean;
-}
+const VPS_HOST = "humming.traysonkelii.com";
+const HEARTBEAT_API = `https://${VPS_HOST}`;
+const STREAM_URL = `https://${VPS_HOST}/hummingbird/whep`;
 
 export default function CameraFeed() {
-  const [stats, setStats] = useState<StreamStats | null>(null);
-  const [isOffline, setIsOffline] = useState(false);
+  const [isLive, setIsLive] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const peerConnection = useRef<RTCPeerConnection | null>(null);
 
-  // Poll for stats to check connectivity and recording status
+  // 1. HEARTBEAT (Keep the stream alive)
   useEffect(() => {
-    const fetchStats = async () => {
+    const pingServer = async () => {
       try {
-        const response = await fetch(`${CAMERA_API_BASE}/api/stats`);
-        if (response.ok) {
-          const data = await response.json();
-          setStats(data);
-          setIsOffline(false);
-        } else {
-          setIsOffline(true);
+        await fetch(`${HEARTBEAT_API}/ping`, { method: "POST" });
+        setIsLive(true);
+      } catch (e) {
+        console.warn("Heartbeat failed", e);
+        setIsLive(false);
+      }
+    };
+    pingServer();
+    const interval = setInterval(pingServer, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // 2. VIDEO PLAYER (WHEP Logic)
+  useEffect(() => {
+    if (!isLive || !videoRef.current) return;
+
+    const startStream = async () => {
+      // Clean up old connection
+      if (peerConnection.current) peerConnection.current.close();
+
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      });
+      peerConnection.current = pc;
+
+      // Add a receive-only transceiver
+      pc.addTransceiver("video", { direction: "recvonly" });
+      pc.addTransceiver("audio", { direction: "recvonly" });
+
+      // When tracks arrive, attach to video element
+      pc.ontrack = (event) => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = event.streams[0];
         }
-      } catch (error) {
-        console.error('Failed to fetch stats:', error);
-        setIsOffline(true);
+      };
+
+      // Create Offer
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      // Send to Server (WHEP)
+      try {
+        const response = await fetch(STREAM_URL, {
+          method: "POST",
+          body: offer.sdp,
+          headers: {
+            "Content-Type": "application/sdp",
+          },
+        });
+
+        if (!response.ok) throw new Error(`Server returned ${response.status}`);
+
+        const answerSdp = await response.text();
+        await pc.setRemoteDescription(
+          new RTCSessionDescription({ type: "answer", sdp: answerSdp })
+        );
+      } catch (err) {
+        console.error("Stream connection failed:", err);
       }
     };
 
-    fetchStats();
-    const interval = setInterval(fetchStats, 3000); // Check every 3 seconds
-    return () => clearInterval(interval);
-  }, []);
+    startStream();
+
+    return () => {
+      if (peerConnection.current) {
+        peerConnection.current.close();
+      }
+    };
+  }, [isLive]);
 
   return (
     <CameraCard>
       <Header>
         <Title>Hummingbird Nest</Title>
-        <StatusBadge $active={!isOffline}>
-          {!isOffline ? (
+        <StatusBadge $active={isLive}>
+          {isLive ? (
             <>
-              <LiveDot />
-              LIVE
+              <LiveDot /> LIVE
             </>
           ) : (
-            <>OFFLINE</>
+            "OFFLINE"
           )}
         </StatusBadge>
       </Header>
 
       <VideoContainer>
-        {!isOffline ? (
-          <>
-            <LiveStream
-              src={`${CAMERA_API_BASE}/video_feed`}
-              alt="Live Stream"
-              onError={(e) => {
-                 // Retry logic: reload image if stream drops
-                 const target = e.target as HTMLImageElement;
-                 setTimeout(() => {
-                    target.src = `${CAMERA_API_BASE}/video_feed?t=${Date.now()}`;
-                 }, 1000);
-              }}
-            />
-            {stats && (
-              <OverlayStats>
-                {stats.recording && <RecTag>● REC</RecTag>}
-              </OverlayStats>
-            )}
-          </>
+        {isLive ? (
+          <StyledVideo
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            controls
+          />
         ) : (
           <OfflineMessage>
             <Spinner />
-            <p>Connecting to Nest...</p>
+            <p>Waking up camera...</p>
           </OfflineMessage>
         )}
       </VideoContainer>
@@ -84,7 +120,15 @@ export default function CameraFeed() {
   );
 }
 
-// --- STYLED COMPONENTS ---
+// --- STYLES ---
+
+const StyledVideo = styled.video`
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  object-fit: contain;
+`;
 
 const pulse = keyframes`
   0%, 100% { opacity: 1; }
@@ -101,11 +145,11 @@ const CameraCard = styled.div`
   border-radius: 24px;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6),
-              inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
   max-width: 900px;
   width: 100%;
   margin: 0 auto;
-  font-family: 'Inter', sans-serif;
+  font-family: "Inter", sans-serif;
 `;
 
 const Header = styled.div`
@@ -122,7 +166,6 @@ const Title = styled.h2`
   margin: 0;
   font-size: 1.1rem;
   font-weight: 600;
-  letter-spacing: -0.02em;
 `;
 
 const StatusBadge = styled.div<{ $active: boolean }>`
@@ -131,13 +174,11 @@ const StatusBadge = styled.div<{ $active: boolean }>`
   gap: 0.5rem;
   padding: 0.4rem 0.8rem;
   border-radius: 100px;
-  background: ${props => props.$active 
-    ? 'rgba(255, 59, 48, 0.15)' 
-    : 'rgba(255, 255, 255, 0.1)'};
-  color: ${props => props.$active ? '#ff3b30' : '#888'};
+  background: ${(props) =>
+    props.$active ? "rgba(255, 59, 48, 0.15)" : "rgba(255, 255, 255, 0.1)"};
+  color: ${(props) => (props.$active ? "#ff3b30" : "#888")};
   font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.05em;
 `;
 
 const LiveDot = styled.div`
@@ -156,33 +197,6 @@ const VideoContainer = styled.div`
   display: flex;
   justify-content: center;
   align-items: center;
-`;
-
-const LiveStream = styled.img`
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-`;
-
-const OverlayStats = styled.div`
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  background: rgba(0, 0, 0, 0.6);
-  padding: 4px 8px;
-  border-radius: 4px;
-  color: #fff;
-  font-size: 0.7rem;
-  font-family: monospace;
-  pointer-events: none;
-  display: flex;
-  gap: 8px;
-`;
-
-const RecTag = styled.span`
-  color: #ff3b30;
-  font-weight: bold;
 `;
 
 const OfflineMessage = styled.div`
